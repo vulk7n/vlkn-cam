@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VLKN Freecam</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div id="container" style="display: none;">
+        <!-- Top Info -->
+        <div class="top-bar">
+            <div id="zoom-level">1.00X ZOOM</div>
+        </div>
+
+        <!-- Viewfinder Corners -->
+        <div class="corner top-left"></div>
+        <div class="corner top-right"></div>
+        <div class="corner bottom-left"></div>
+        <div class="corner bottom-right"></div>
+
+        <!-- Center Reticle -->
+        <!-- Center Reticle -->
+        <div class="reticle">
+            <svg width="200" height="200" viewBox="0 0 200 200" fill="none" class="reticle-svg">
+                <!-- Inner small triangle/dot -->
+                <path d="M100 95 L105 105 H95 Z" fill="rgba(255,255,255,0.8)" />
+
+                <!-- Circular Ticks -->
+                <g stroke="rgba(255,255,255,0.3)" stroke-width="2">
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(0 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(30 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(60 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(90 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(120 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(150 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(180 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(210 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(240 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(270 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(300 100 100)" />
+                    <line x1="100" y1="20" x2="100" y2="30" transform="rotate(330 100 100)" />
+                </g>
+
+                <!-- Thin Circle ring -->
+                <circle cx="100" cy="100" r="80" stroke="rgba(255,255,255,0.1)" stroke-width="1"
+                    stroke-dasharray="4 4" />
+
+                <!-- Center Square bracket hints -->
+                <path d="M90 80 H80 V90" stroke="rgba(255,255,255,0.4)" stroke-width="2" fill="none" />
+                <path d="M110 80 H120 V90" stroke="rgba(255,255,255,0.4)" stroke-width="2" fill="none" />
+                <path d="M90 120 H80 V110" stroke="rgba(255,255,255,0.4)" stroke-width="2" fill="none" />
+                <path d="M110 120 H120 V110" stroke="rgba(255,255,255,0.4)" stroke-width="2" fill="none" />
+            </svg>
+        </div>
+
+        <!-- Grid Lines -->
+        <div class="grid-lines"></div>
+
+        <!-- Bottom Controls -->
+        <div class="controls-bar">
+            <!-- Row 1 -->
+            <div class="row">
+                <div class="key-group">
+                    <span class="key" data-key="W">W</span> Forward
+                    <span class="key" data-key="S">S</span> Backwards
+                    <span class="key" data-key="A">A</span> Left
+                    <span class="key" data-key="D">D</span> Right
+                </div>
+                <div class="key-group">
+                    <span class="key" data-key="Q">Q</span> Up
+                    <span class="key" data-key="E">E</span> Down
+                </div>
+                <div class="key-group">
+                    <span class="key" data-key="LEFT">←</span> Rotate Left
+                    <span class="key" data-key="RIGHT">→</span> Rotate Right
+                </div>
+                <div class="key-group">
+                    <span class="key" data-key="UP">↑</span> +Sensitivity
+                    <span class="key" data-key="DOWN">↓</span> -Sensitivity
+                </div>
+                <div class="key-group">
+                    <span class="key" data-key="Z">Z</span> Zoom In
+                    <span class="key" data-key="C">C</span> Zoom Out
+                    <span class="key" data-key="R">R</span> Reset
+                </div>
+            </div>
+
+            <!-- Row 2 -->
+            <div class="row">
+                <div class="key-group">
+                    <span class="key" data-key="O">O</span> Settings
+                </div>
+                <div class="key-group">
+                    <span class="key wide" data-key="BACKSPACE">Backspace</span> Close
+                </div>
+                <div class="key-group">
+                    <span class="key" data-key="SPACE">SPACE</span> Capture
+                </div>
+                <div class="key-group">
+                    <span class="key wide" data-key="PAGEUP">Page Up</span> Roll Left
+                    <span class="key wide" data-key="PAGEDOWN">Page Down</span> Roll Right
+                </div>
+            </div>
+        </div>
+        <!-- Settings Panel -->
+        <div class="overlay-container">
+            <div id="settings-panel" style="display: none;">
+                <div class="close-btn" onclick="closeSettings()"><span class="key"
+                        style="color: black; background: white;">O</span></div>
+                <div class="settings-header">CAMERA SETTINGS</div>
+                <div class="setting-item" id="setting-filter">
+                    <span class="label">Filter</span>
+                    <span class="value" onclick="editFilter(event)">None</span>
+                </div>
+                <div class="setting-item" id="setting-bars">
+                    <span class="label">Cinematic Bars</span>
+                    <span class="value">OFF</span>
+                </div>
+                <div class="setting-item" id="setting-minimap">
+                    <span class="label">Minimap</span>
+                    <span class="value">HIDDEN</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Watermark Overlay -->
+    <img id="watermark" src="" alt="Watermark" style="display: none;">
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
