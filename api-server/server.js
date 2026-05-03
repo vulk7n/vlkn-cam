@@ -5,7 +5,7 @@ const { Image, decode } = require('imagescript');
 // --- CONFIGURATION ---
 const PORT = 35500; // Uncommon port
 // You can set this via environment variable OR just paste it here for a single-file setup.
-const WEBHOOK_URL = process.env.DISCORD_WEBHOOK || 'https://discord.com/api/webhooks/1460933934471843873/_hspkxHry_QTx0D5pbX1iHPqj3xtFPBRmoY_6Bgjtnch0gKoDWqws5fJ3p4TEbPsdBHq';
+const WEBHOOK_URL = process.env.DISCORD_WEBHOOK || '';
 
 // --- SERVER SETUP ---
 const app = express();
