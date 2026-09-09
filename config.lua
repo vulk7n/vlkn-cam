@@ -1,38 +1,33 @@
-local DefaultLogo = 'https://i.ibb.co/gLPRMZFL/Whats-App-Image-2025-08-13-at-16-07-20-b25bbd84-Photoroom.png'
+-- This file is a shared_script, so everything in it reaches the client.
+-- Never put secrets here. The Discord webhook, the bot token, the embed
+-- appearance and capture quality are server-owned; set them in server.cfg:
+--
+--   set vlkn_webhook         "https://discord.com/api/webhooks/ID/TOKEN"
+--   set vlkn_bot_token       "YOUR_BOT_TOKEN"    -- optional; also DMs the photo
+--   set vlkn_dm_enabled      "1"                 -- 0 turns the DM off
+--   set vlkn_embed_title     "Your Photo is Here"
+--   set vlkn_embed_color     "rgb(255, 213, 0)"
+--   set vlkn_embed_footer    "Samrajya Cam"
+--   set vlkn_embed_hint      "Use /ccam"
+--   set vlkn_embed_icon      "https://example.com/icon.png"
+--   set vlkn_capture_quality "0.95"
+--   set vlkn_capture_encoding "jpg"        -- jpg (recommended) | webp | png
+--   set vlkn_channel_name     "#camera-photos"
+--
+-- Use `set` (never `setr`) for vlkn_webhook and vlkn_bot_token: `setr`
+-- replicates the value to every connected client.
+--
+-- The DM needs vlkn_dm_enabled (on by default) plus a token, and needs the bot
+-- and the player to share a Discord server, and the player to allow DMs from
+-- server members. A failed DM never blocks the channel post.
 
 Config = {
     CommandName = 'ccam', -- /ccam
-    Webhook = '', -- YOUR DISCORD WEBHOOK (Required for Hosting)
-    EnableWebhookLog = true, -- If true, considers the upload as a "Server Log". (Note: Uploading always posts to the webhook channel)
-    SendToDM = true, -- Send the photo to the user's Discord DM? (Requires DiscordBotToken)
-    DiscordBotToken = '', -- YOUR DISCORD BOT TOKEN (Required if SendToDM is true)
 
-    -- Custom Watermark API Server URL (Your VPS)
-    -- Ensure port 35500 is open on your Azure/VPS firewall
-    UploadServiceUrl = '', 
-     
-    
-    -- Screenshot Quality (0.1 to 1.0)
-    -- Higher = Better Quality but Higher Memory Usage (which might cause crashes or lag)
-    -- Recommended: 0.8 to 0.9. If you have issues, lower it to 0.6 or 0.7.
-    CaptureQuality = 0.9,
-    -- Discord Embed Customization
-    Embed = {
-        Title = '📸 Your Screenshot',
-        Color = '#9500ffff', -- Hex Color (Blue: #3498db, Red: #e74c3c, Green: #2ecc71)
-        Footer = 'VLKN Freecam',
-        FooterIcon = DefaultLogo -- URL for the footer icon (Watermark)
-    },
-    
-    -- On-Screen Watermark (Overlay)
-    Watermark = {
+    -- Capture quality is not here on purpose. The server requests the capture,
+    -- so it owns the encoding and quality: set vlkn_capture_quality (0.1-1.0,
+    -- default 0.95). Higher means a larger upload and a slower send.
 
-        Logo = DefaultLogo, -- URL of your server logo
-        Opacity = 0.7, -- 0.0 to 1.0 (20-30% = 0.2-0.3)
-        Position = 'top-right', -- 'top-left', 'top-right', 'bottom-left', 'bottom-right'
-        LogoSize = 200 -- Size (Width) in pixels. Height acts automatically.
-    },
-    
     PreventUnderground = true, -- Block camera from going under the map ground (False to allow interiors)
     MaxDistance = 10.0, -- Max distance from player before camera gets stopped
     MinSpeed = 0.1,

@@ -22,10 +22,10 @@ body {
     top: 5vh;
     right: 5vw;
     width: 300px;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(18, 15, 5, 0.46);
     /* Match controls */
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 213, 0, 0.45);
     /* Match controls */
     border-radius: 0;
     /* Square as requested */
@@ -45,10 +45,10 @@ body {
     text-align: center;
     margin-bottom: 20px;
     letter-spacing: 2px;
-    border-bottom: 1px solid rgba(0, 191, 208, 0.5);
-    /* Blue underscore */
+    border-bottom: 1px solid rgba(255, 213, 0, 0.65);
+    /* Gold underscore */
     padding-bottom: 10px;
-    text-shadow: 0 0 10px rgba(0, 191, 208, 0.5);
+    text-shadow: 0 0 10px rgba(255, 213, 0, 0.45);
 }
 
 .setting-item {
@@ -70,9 +70,9 @@ body {
 }
 
 .setting-item.selected {
-    background: rgba(0, 191, 208, 0.15);
-    border-left: 3px solid #00bfd0;
-    /* Blue accent */
+    background: rgba(255, 213, 0, 0.14);
+    border-left: 3px solid #ffd500;
+    /* Gold accent */
     color: white;
 }
 
@@ -82,10 +82,10 @@ body {
 }
 
 .setting-item.selected .value {
-    color: #00bfd0;
-    /* Blue value when selected */
+    color: #ffd500;
+    /* Gold value when selected */
     font-weight: 500;
-    text-shadow: 0 0 8px rgba(0, 191, 208, 0.4);
+    text-shadow: 0 0 8px rgba(255, 213, 0, 0.4);
 }
 
 .close-btn {
@@ -183,14 +183,13 @@ body {
     /* Row Gap 10px, Col Gap 30px */
     padding: 10px 20px;
 
-    background: rgba(0, 0, 0, 0.6);
+    background: transparent;
     /* Slightly darker for better visibility */
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    /* Slight rounding for polish */
+    border: none;
+    border-radius: 0;
 
     color: white;
     font-size: 0.85rem;
@@ -198,7 +197,7 @@ body {
     align-items: center;
     width: auto;
 
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    box-shadow: none;
     /* Subtle shadow for depth */
     z-index: 10;
 }
@@ -219,11 +218,11 @@ body {
     gap: 8px;
     padding: 8px 20px;
 
-    background: rgba(0, 0, 0, 0.5);
-    /* Much more transparent */
-    backdrop-filter: blur(5px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 8px;
+    background: transparent;
+    /* Keep the game view clean behind controls */
+    backdrop-filter: none;
+    border: none;
+    border-radius: 0;
 
     color: rgba(255, 255, 255, 0.9);
     font-size: 0.75rem;
@@ -231,8 +230,7 @@ body {
     font-weight: 500;
     letter-spacing: 0.5px;
 
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-    /* Softer shadow */
+    box-shadow: none;
     z-index: 10;
 }
 
@@ -251,19 +249,19 @@ body {
 }
 
 .key {
-    background: #ffffff;
-    /* White Box */
+    background: #ffd500;
+    /* Gold Box */
     color: #000000;
     /* Black Text */
     padding: 2px 6px;
     /* Smaller padding */
-    border-radius: 4px;
+    border-radius: 0;
     font-weight: 700;
     min-width: 16px;
     text-align: center;
     font-size: 0.75rem;
     /* Smaller key text */
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
     text-transform: uppercase;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
@@ -275,19 +273,35 @@ body {
 }
 
 .key.active {
-    background: #00bfd0;
-    /* Blue effect on press */
-    color: #ffffff;
-    transform: scale(1.1);
-    box-shadow: 0 0 15px rgba(0, 191, 208, 0.8);
-    /* Strong Blue Glow */
-    border-color: #00bfd0;
+    background: #fff1a6;
+    /* Gold effect on press */
+    color: #000000;
+    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35);
+    /* Press feedback without spilling outside the key */
+    border-color: #ffd500;
 }
 
-/* Watermark Overlay */
-#watermark {
-    position: absolute;
-    z-index: 9999;
+#capture-flash {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
     pointer-events: none;
-    /* transition removed for instant snap capture */
+    background: #ffffff;
+    opacity: 0;
+}
+
+#capture-flash.active {
+    animation: captureFlash 220ms ease-out;
+}
+
+@keyframes captureFlash {
+    0% {
+        opacity: 0;
+    }
+    12% {
+        opacity: 0.85;
+    }
+    100% {
+        opacity: 0;
+    }
 }

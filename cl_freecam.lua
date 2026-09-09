@@ -1,54 +1,77 @@
-print('[VLKN-CCAM] Client script starting...')
--- local Config = lib.load('config') -- Switched to global load
+-- Set while a capture is in flight, so the on-screen controls stay hidden until
+-- the server confirms the photo is done and Space cannot stack captures.
+local captureInProgress = false
 
-RegisterNUICallback('uploadToVPSProxy', function(data, cb)
-    local image = data.image
-    if not image then return cb(json.encode({ status = 'error', message = 'No image data' })) end
+-- Must match CAPTURE_CHUNK_SIZE in server/sv_freecam.js. Small chunks +
+-- per-chunk delay keep the upload invisible to reliable-pipe limits,
+-- anticheat burst heuristics, and event-spam filters alike.
+local CAPTURE_CHUNK_SIZE = 4096
 
-    local requestId = GetGameTimer() .. math.random(1000,9999)
-    local chunkSize = 20 * 1024 -- 20KB chunks
-    local totalLen = string.len(image)
-    local numChunks = math.ceil(totalLen / chunkSize)
+-- Milliseconds between chunk sends. 4096 chars at 20ms moves a full-res
+-- photo (~150 chunks) in roughly 3 seconds - imperceptible next to Discord.
+local CAPTURE_CHUNK_DELAY_MS = 20
 
-    print('[VLKN-CCAM] Starting Chunked Upload. Total: ' .. totalLen .. ' bytes. Chunks: ' .. numChunks)
-
-    -- Use TriggerLatentServerEvent to prevent overflow
-    -- 50000 bps = ~50KB/s. Safe for most connections.
-    for i = 1, numChunks do
-        local startIdx = (i - 1) * chunkSize + 1
-        local endIdx = math.min(i * chunkSize, totalLen)
-        local chunk = string.sub(image, startIdx, endIdx)
-        
-        TriggerLatentServerEvent('vlkn-ccam:uploadChunk', 50000, requestId, i, chunk)
-        
-        if i % 10 == 0 then Wait(50) end -- Extra safety yield
-    end
-
-    -- Send the rest of the data (minus the huge image string)
-    local metaData = {
-        workerUrl = data.workerUrl,
-        webhookPayload = data.webhookPayload,
-        watermark = data.watermark,
-        notifyLog = data.notifyLog,
-        totalChunks = numChunks
-    }
-
-    TriggerServerEvent('vlkn-ccam:uploadFinish', requestId, metaData)
-    cb(json.encode({ status = 'ok' }))
+RegisterNetEvent('vlkn-ccam:captureDone', function()
+    captureInProgress = false
 end)
 
-RegisterNetEvent('vlkn-ccam:clientLog', function(msg)
-    print(msg) 
+-- The server validates first, then tells us to shoot. We take the frame with
+-- screenshot-basic's client export and relay it back as small event chunks:
+-- production sits behind a DDoS filter that eats screenshot-basic's built-in
+-- HTTP upload, but the regular FiveM connection is unaffected.
+RegisterNetEvent('vlkn-ccam:beginCapture', function(opts)
+    if not captureInProgress then return end
+
+    opts = opts or {}
+    local captureId = tostring(opts.captureId or '')
+    if captureId == '' then return end
+
+    local sbState = GetResourceState('screenshot-basic')
+    if sbState ~= 'started' then
+        print('^1[VLKN-CCAM] screenshot-basic is not started (state: ' .. sbState .. ') - cannot capture.^0')
+        TriggerServerEvent('vlkn-ccam:captureAborted', captureId)
+        return
+    end
+
+    local ok, err = pcall(function()
+        exports['screenshot-basic']:requestScreenshot({
+            encoding = opts.encoding,
+            quality = opts.quality
+        }, function(dataUri)
+            if not captureInProgress then return end
+
+            local b64 = dataUri or ''
+            -- Strip the data-URI prefix; the server knows the encoding already.
+            local marker = string.find(b64, ';base64,', 1, true)
+            if marker then b64 = string.sub(b64, marker + 8) end
+
+            if #b64 == 0 then
+                print('^1[VLKN-CCAM] Capture returned empty data.^0')
+                TriggerServerEvent('vlkn-ccam:captureAborted', captureId)
+                return
+            end
+
+        local total = math.ceil(#b64 / CAPTURE_CHUNK_SIZE)
+        for i = 0, total - 1 do
+            local part = string.sub(b64, i * CAPTURE_CHUNK_SIZE + 1, (i + 1) * CAPTURE_CHUNK_SIZE)
+            TriggerServerEvent('vlkn-ccam:captureChunk', captureId, i, total, part)
+            Wait(CAPTURE_CHUNK_DELAY_MS)
+        end
+        end)
+    end)
+
+    if not ok then
+        print('^1[VLKN-CCAM] requestScreenshot errored: ' .. tostring(err) .. '^0')
+        TriggerServerEvent('vlkn-ccam:captureAborted', captureId)
+    end
 end)
 
 -- Wait for Resource Start
 CreateThread(function()
-    Citizen.Wait(1000) -- Give some time for Config to be loaded globally if it's from another script
+    Citizen.Wait(1000)
     if not Config then
         print('^1[VLKN-CCAM] CRITICAL ERROR: Config is nil! Check config.lua loading.^0')
         return
-    else
-        print('[VLKN-CCAM] Config loaded successfully. Command: ' .. tostring(Config.CommandName))
     end
 
     -- Force Chat Suggestion - Moved here to ensure Config is loaded
@@ -84,7 +107,6 @@ local monitoredKeys = {
     { code = 35, label = 'D' },
     { code = 44, label = 'Q' },
     { code = 38, label = 'E' },
-    { code = 22, label = 'SPACE' },
     { code = 22, label = 'SPACE' },
     -- { code = 21, label = 'SHIFT' }, -- Removed
     { code = 174, label = 'LEFT' },
@@ -148,13 +170,27 @@ local function resetEverything()
     SendNUIMessage({type = 'settings', show = false})
 end
 
-local function setNewFov(setNewFov)
+local lastSentFov = -1.0
+
+local function updateZoomUI(fov)
+    if not fov then return end
+    if math.abs(fov - lastSentFov) >= 0.05 then
+        lastSentFov = fov
+        SendNUIMessage({
+            type = 'update',
+            zoom = fov
+        })
+    end
+end
+
+local function setNewFov(change)
     if DoesCamExist(FREE_CAM) then
         local currFov = GetCamFov(FREE_CAM)
-        local newFov = currFov + setNewFov
+        local newFov = currFov + change
 
         if ((newFov >= Config.MinFov) and (newFov <= Config.MaxFov)) then
             SetCamFov(FREE_CAM, newFov)
+            updateZoomUI(newFov)
         end
     end
 end
@@ -258,7 +294,12 @@ local function processNewPos(x, y, z)
                 currFilter = currFilter + 1
                 if currFilter > #Config.Filters then currFilter = 1 end
             end
-            SetTimecycleModifier(Config.Filters[currFilter])
+            local filterName = Config.Filters[currFilter]
+            if not filterName or filterName == 'None' or filterName == 'default' then
+                ClearTimecycleModifier()
+            else
+                SetTimecycleModifier(filterName)
+            end
         -- Index 1: Bars (Was DOF)
         elseif settingsIndex == 1 then 
             toggleBars()
@@ -327,49 +368,43 @@ local function processNewPos(x, y, z)
         -- Standard Zoom Logic (Menu Closed)
         if IsDisabledControlPressed(1, 15) then -- Mouse wheel up (Zoom In)
             setNewFov(-1.0)
-            SendNUIMessage({type = 'scroll', key = 'SCROLLUP'})
         elseif IsDisabledControlPressed(1, 14) then -- Mouse wheel down (Zoom Out)
             setNewFov(1.0)
-            SendNUIMessage({type = 'scroll', key = 'SCROLLDOWN'})
         end
     end
 
-    
+
     -- BACKSPACE / ESC (Close Cam)
     -- explicitly ignore RMB (25) to prevent accidental closes
     local isRMB = IsDisabledControlPressed(1, 25)
-    if (IsDisabledControlJustPressed(1, 177) and not isRMB) or IsDisabledControlJustPressed(1, 200) then 
+    if (IsDisabledControlJustPressed(1, 177) and not isRMB) or IsDisabledControlJustPressed(1, 200) then
         camActive = false
         isSettingsOpen = false
         SendNUIMessage({type = 'settings', show = false})
     end
-    
+
     -- PageUp / PageDown (Roll Logic - User Requested)
     if not isSettingsOpen then
         if IsDisabledControlPressed(1, 10) then -- Page Up (Roll Left)
              offsetRotY = offsetRotY + moveSpeed * 5.0
-             SendNUIMessage({type = 'keypress', key = 'PAGEUP', active = true})
         elseif IsDisabledControlPressed(1, 11) then -- Page Down (Roll Right)
              offsetRotY = offsetRotY - moveSpeed * 5.0
-             SendNUIMessage({type = 'keypress', key = 'PAGEDOWN', active = true})
         end
     end
-    
+
     -- Z / C (Zoom In/Out) - Matching UI
     if IsDisabledControlPressed(1, 20) then -- Z (Zoom In)
         setNewFov(-1.0)
-        SendNUIMessage({type = 'keypress', key = 'Z', active = true})
     elseif IsDisabledControlPressed(1, 26) then -- C (Zoom Out)
         setNewFov(1.0)
-        SendNUIMessage({type = 'keypress', key = 'C', active = true})
     end
-    
+
     -- R (Reset Zoom & Roll) - User Requested
     if IsDisabledControlJustPressed(1, 45) then -- R
         offsetRotY = 0.0
         local defaultFov = GetGameplayCamFov()
         SetCamFov(FREE_CAM, defaultFov)
-        SendNUIMessage({type = 'keypress', key = 'R', active = true})
+        updateZoomUI(defaultFov)
     end
 
     -- Update Key States for Z/C visual feedback is handled in the main loop above, 
@@ -401,9 +436,7 @@ local function processNewPos(x, y, z)
 
 
     offsetRotX = math.clamp(offsetRotX, -90.0, 90.0)
-    offsetRotX = math.clamp(offsetRotX, -90.0, 90.0)
-    -- offsetRotY is now controlled by PageUp/Down
-    offsetRotZ = offsetRotZ % 360.0
+    -- offsetRotY is controlled by PageUp/Down
     offsetRotZ = offsetRotZ % 360.0
 
     return newPos
@@ -424,60 +457,48 @@ local function processCamControls()
 
     local currentPos = GetEntityCoords(cache.ped)
     if #(currentPos - vec3(newPos.x, newPos.y, newPos.z)) > Config.MaxDistance then
-    if not IsEntityDead(cache.ped) then
+        if not IsEntityDead(cache.ped) then
             TriggerEvent('ox_lib:notify', { type = 'error', description = 'You went too far using the free camera.' })
         end
         camActive = false
         TriggerEvent('ox_lib:hideMenu') -- Safe alternative or just rely on resetEverything
     end
 
-    -- Send NUI Update
-    SendNUIMessage({
-        type = 'update',
-        zoom = GetCamFov(FREE_CAM)
-    })
-
     -- CAPTURE LOGIC (SPACE)
     -- Moved to Thread to prevent blocking control loop
-    if IsDisabledControlJustPressed(1, 22) then -- Space
-        print('[VLKN-CCAM] Space Key Pressed - Starting Capture') -- DEBUG
+    if IsDisabledControlJustPressed(1, 22) and not captureInProgress then -- Space
         CreateThread(function()
-            -- HIDE CONTROLS ONLY (Keep Watermark - though for canvas method we might not need NUI visible, we keep it for preview)
-            SendNUIMessage({type = 'screenshotMode', enabled = true}) 
-            Wait(1000) -- Wait for UI to hide
+            captureInProgress = true
 
-            if not Config.Webhook or Config.Webhook == '' or Config.Webhook:find('YOUR DISCORD WEBHOOK') then
-                print('[VLKN-CCAM] Error: Discord Webhook not configured in config.lua!')
-                TriggerEvent('ox_lib:notify', {type = 'error', description = 'Error: Webhook not configured!'})
-                if camActive then SendNUIMessage({type = 'screenshotMode', enabled = false}) end
-                return
+            -- Hide the on-screen controls so they stay out of the capture.
+            SendNUIMessage({type = 'screenshotMode', enabled = true})
+            Wait(150) -- Wait for UI to hide cleanly
+
+            SendNUIMessage({type = 'captureFlash'})
+            print('^2[VLKN-CCAM] Requesting capture...^0')
+
+            -- The server validates the webhook first, then answers with
+            -- vlkn-ccam:beginCapture (see handler at the top of this file),
+            -- which takes the shot and streams it back in chunks. Encoding and
+            -- quality stay server-owned via convars.
+            TriggerServerEvent('vlkn-ccam:requestCapture')
+
+            -- Controls stay hidden until the server reports the photo finished,
+            -- which guarantees they are absent from the frame. The watchdog
+            -- restores them if the server never answers. It has to outlast the
+            -- server's own 30s capture timeout: if it fires first the two
+            -- desync, the next Space is rejected as "already in flight", and
+            -- the UI hangs all over again.
+            local waited = 0
+            while captureInProgress and waited < 35000 do
+                Wait(100)
+                waited = waited + 100
             end
 
-            print('[VLKN-CCAM] Requesting Screenshot...') -- DEBUG
-
-            -- REQUEST BASE64 (Client Composition)
-            -- Quality controlled by Config.CaptureQuality
-            exports['screenshot-basic']:requestScreenshot({                encoding = 'jpg', -- Vercel Limit Optimization
-                quality = Config.CaptureQuality or 0.9
-            }, function(data)
-                print('[VLKN-CCAM] Screenshot Data Received. Length: ' .. tostring(#data)) -- DEBUG
-                -- Send Data to NUI for Canvas Composition & Upload
-                SendNUIMessage({
-                    type = 'perform_capture',
-                    base64 = data,
-                    webhook = Config.Webhook,
-                    workerUrl = Config.UploadServiceUrl, -- Pass Worker URL
-                    watermark = Config.Watermark,
-                    embed = Config.Embed, -- Pass Embed config
-                    notifyLog = Config.EnableWebhookLog
-                })
-                
-                -- Restore Controls immediately after grabbing frame
-                Wait(100) 
-                if camActive then 
-                    SendNUIMessage({type = 'screenshotMode', enabled = false}) 
-                end
-            end)
+            captureInProgress = false
+            if camActive then
+                SendNUIMessage({type = 'screenshotMode', enabled = false})
+            end
         end)
     end
     
@@ -496,19 +517,16 @@ local function toggleCam()
     camActive = not camActive
     if camActive then
         ClearFocus()
-        FREE_CAM = CreateCamWithParams('DEFAULT_SCRIPTED_CAMERA', GetEntityCoords(cache.ped), 0, 0, 0, GetGameplayCamFov() * 1.0)
+        local initialFov = GetGameplayCamFov() * 1.0
+        FREE_CAM = CreateCamWithParams('DEFAULT_SCRIPTED_CAMERA', GetEntityCoords(cache.ped), 0, 0, 0, initialFov)
         SetCamActive(FREE_CAM, true)
         RenderScriptCams(true, false, 0, true, false)
         SetCamAffectsAiming(FREE_CAM, false)
-        
-        -- Send Watermark Config
+
+        lastSentFov = initialFov
         SendNUIMessage({
-            type = 'watermark',
-            show = false,
-            src = Config.Watermark.Logo,
-            opacity = Config.Watermark.Opacity,
-            position = Config.Watermark.Position,
-            size = Config.Watermark.LogoSize -- Single size value
+            type = 'update',
+            zoom = initialFov
         })
         
         SendNUIMessage({type = 'ui', display = true}) -- Show UI
@@ -523,10 +541,9 @@ local function toggleCam()
                 Wait(0)
             end
             resetEverything()
-            -- Ensure UI is hidden and Watermark is reset
+            -- Ensure UI is hidden
             SendNUIMessage({type = 'ui', display = false})
             SendNUIMessage({type = 'screenshotMode', enabled = false})
-            SendNUIMessage({type = 'watermark', show = false}) -- Force Hide
         end)
     else
         SendNUIMessage({type = 'ui', display = false})
@@ -540,34 +557,14 @@ RegisterNetEvent('vlkn-ccam:client:open', function()
     end
 end)
 
+RegisterNetEvent('vlkn-ccam:uploadSuccess', function(channel)
+    print(string.format('^2[VLKN-CCAM] Photo successfully posted to %s^0', channel or '#camera-photos'))
+end)
+
 RegisterNUICallback('closeMenu', function(data, cb)
     isSettingsOpen = false
     SetNuiFocus(false, false)
     SendNUIMessage({type = 'settings', show = false})
-    cb('ok')
-end)
-
--- NUI Callback: Upload Success/Fail (Vercel)
-RegisterNUICallback('notify_capture', function(data, cb)
-    if data.success then
-        lib.notify({
-            title = 'Screenshot Uploaded!',
-            description = 'Check your Discord',
-            type = 'success',
-            duration = 5000
-        })
-        
-        -- Trigger Server to send DM if URL exists
-        if data.url then
-             TriggerServerEvent('vlkn-ccam:sendDM', data.url)
-        end
-    else
-        lib.notify({
-            title = 'Upload Failed',
-            description = data.message,
-            type = 'error'
-        })
-    end
     cb('ok')
 end)
 
@@ -579,7 +576,12 @@ end)
 RegisterNUICallback('setFilter', function(data, cb)
     if data.index and data.index > 0 then
         currFilter = math.clamp(data.index, 1, #Config.Filters)
-        SetTimecycleModifier(Config.Filters[currFilter])
+        local filterName = Config.Filters[currFilter]
+        if not filterName or filterName == 'None' or filterName == 'default' then
+            ClearTimecycleModifier()
+        else
+            SetTimecycleModifier(filterName)
+        end
     end
     -- Trigger UI update to reflect the change (or reset if invalid)
     SendNUIMessage({
@@ -588,7 +590,6 @@ RegisterNUICallback('setFilter', function(data, cb)
         index = settingsIndex,
         data = {
             filter = currFilter .. ' / ' .. #Config.Filters,
-            dof = dofOn,
             bars = barsOn,
             minimap = not hideMap
         }
@@ -598,25 +599,10 @@ end)
 
  
 RegisterCommand(Config.CommandName, function()
-    print('Command /' .. Config.CommandName .. ' triggered!')
     toggleCam()
 end)
 
-RegisterNUICallback('notify_capture', function(data, cb)
-    if data.success then
-        TriggerEvent('ox_lib:notify', {type = 'success', description = data.message})
-        
-        -- Trigger DM Logic if URL is present
-        if data.url then
-            TriggerServerEvent('vlkn-freecam:server:capture', data.url)
-        end
-    else
-        TriggerEvent('ox_lib:notify', {type = 'error', description = data.message or 'Upload Failed'})
-    end
-    cb('ok')
-end)
-
-RegisterCommand('vlkn_settings', function()
+local function toggleSettings()
     if camActive then
         isSettingsOpen = not isSettingsOpen
         -- keepInput = true (false arg 1), hasCursor = isSettingsOpen
@@ -632,10 +618,14 @@ RegisterCommand('vlkn_settings', function()
             }
         })
     end
-end, false)
+end
 
+RegisterCommand('vlkn_settings_i', toggleSettings, false)
 
-RegisterKeyMapping('vlkn_settings', 'Toggle Freecam Settings', 'keyboard', 'o')
+-- Keep the old cached O keybind from opening settings after the command was moved to I.
+RegisterCommand('vlkn_settings', function() end, false)
+
+RegisterKeyMapping('vlkn_settings_i', 'Toggle Freecam Settings', 'keyboard', 'i')
 
 AddEventHandler('gameEventTriggered', function(event, data)
     if event ~= 'CEventNetworkEntityDamage' then return end
